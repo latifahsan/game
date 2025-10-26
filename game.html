@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Catch The Heart</title>
+<style>
+  body{margin:0;display:flex;justify-content:center;align-items:center;height:100vh;
+       background:linear-gradient(#fff1f3,#fff7ed);font-family:system-ui}
+  .wrap{width:100%;max-width:420px;height:calc(100vh - 20px);background:#ffffffbb;
+       backdrop-filter:blur(6px);border-radius:16px;box-shadow:0 8px 25px #0002;
+       display:flex;flex-direction:column;overflow:hidden}
+  header{padding:10px 14px;border-bottom:1px solid #0001;font-weight:700;display:flex}
+  header span:last-child{margin-left:auto}
+  canvas{width:100%;height:100%;display:block}
+  .hud{display:flex;padding:10px;gap:8px;border-top:1px solid #0001}
+  .stat{flex:1;background:#fffbe8;border-radius:999px;text-align:center;font-weight:700;padding:6px}
+  button{border:0;padding:7px 12px;border-radius:8px;font-weight:700;cursor:pointer}
+  .p{background:#ff3b69;color:#fff}.g{background:#fff;border:1px solid #0002}
+  .modal{position:fixed;inset:0;display:none;justify-content:center;align-items:center;
+         background:#0004;backdrop-filter:blur(6px)}
+  .card{background:#fff;padding:18px;border-radius:14px;max-width:90%;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>Catch The Heart <span>Target: <b id="t">20</b></span></header>
+  <div style="flex:1;display:flex"><canvas id="cv" width="360" height="580"></canvas></div>
+  <div class="hud">
+    <div class="stat">Score: <span id="s">0</span></div>
+    <button id="start" class="p">Start</button>
+    <button id="reset" class="g">Reset</button>
+  </div>
+</div>
+
+<div id="m" class="modal">
+  <div class="card">
+    <h3 style="margin:0 0 8px;color:#ff3b69">Kamu berhasil menangkap semua hati!</h3>
+    <p style="margin:0 0 14px">“Kamu berhasil nangkep semua hati.<br>
+       Sekarang tinggal satu hati yang belum — hati kamu.<br>
+       Boleh nggak kalau aku coba ngedeketin pelan-pelan?”</p>
+    <button id="ok" class="p" style="margin-right:6px">OK</button>
+    <button id="again" class="g">Main Lagi</button>
+  </div>
+</div>
+
+<script>
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const sEl=document.getElementById('s'),m=document.getElementById('m');
+const bStart=document.getElementById('start'),bReset=document.getElementById('reset');
+const bOk=document.getElementById('ok'),bAgain=document.getElementById('again');
+const TARGET=20; let score=0,running=false; let hearts=[],lastSpawn=0;
+
+const player={x:180,y:530,r:40,img:null}; // K2 ~80px diameter
+
+// load face.png
+const img=new Image(); img.src="face.png"; img.onload=()=>player.img=img;
+
+function beep(){
+  try{const a=new AudioContext(),o=a.createOscillator(),g=a.createGain();
+  o.connect(g);g.connect(a.destination);o.frequency.value=750;g.gain.value=.05;
+  o.start();g.gain.exponentialRampToValueAtTime(.0001,a.currentTime+.08);
+  setTimeout(()=>o.stop(),120);}catch{}
+}
+
+function spawn(){
+  hearts.push({x:20+Math.random()*320,y:-40,vy:1+Math.random()*1.5});
+}
+
+function drawHeart(h){
+  ctx.save();
+  ctx.font="48px sans-serif";  // FIXED SIZE
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.fillText("❤️",h.x,h.y);
+  ctx.restore();
+}
+
+function drawPlayer(){
+  ctx.save();ctx.translate(player.x,player.y);
+  ctx.beginPath();ctx.arc(0,0,player.r,0,Math.PI*2);ctx.clip();
+  if(player.img) ctx.drawImage(player.img,-player.r,-player.r,player.r*2,player.r*2);
+  else{ctx.fillStyle="#ccc";ctx.fillRect(-player.r,-player.r,player.r*2,player.r*2);}
+  ctx.restore();
+}
+
+function loop(){
+  if(running){
+    if(Date.now()-lastSpawn>800){spawn();lastSpawn=Date.now();}
+    hearts.forEach(h=>{h.vy+=.02;h.y+=h.vy});
+    for(let i=hearts.length-1;i>=0;i--){
+      let h=hearts[i]; if(h.y>600){hearts.splice(i,1);continue;}
+      let dx=h.x-player.x,dy=h.y-player.y;
+      if(Math.hypot(dx,dy)<player.r+20){
+        hearts.splice(i,1);score++;sEl.textContent=score;beep();
+        if(score>=TARGET){running=false;m.style.display="flex";}
+      }
+    }
+  }
+  ctx.clearRect(0,0,360,580);
+  hearts.forEach(drawHeart); drawPlayer();
+  requestAnimationFrame(loop);
+}
+
+bStart.onclick=()=>{if(running)return;running=true;score=0;hearts=[];sEl.textContent=0;lastSpawn=0;}
+bReset.onclick =()=>{running=false;score=0;hearts=[];sEl.textContent=0;ctx.clearRect(0,0,360,580);}
+bOk.onclick   =()=>{m.style.display="none";bReset.onclick();}
+bAgain.onclick=()=>{m.style.display="none";bStart.onclick();}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
