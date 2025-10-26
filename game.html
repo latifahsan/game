@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Catch The Heart — Simple</title>
+<meta name="description" content="Catch The Heart - simple romantic game. Heart menggunakan Font Awesome; player memakai face.png (ganti nanti)." />
+<!-- Font Awesome CDN (memuat webfont) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-p/w1Yw6mZ6BvVJm2i0JbQf6b8oCqXxZgq8x6b3l+9qK3z2JYb8s5o8b6m0o1Zy7vZ4w1s9z7sK8w7Yz7QxK0w==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+<style>
+  :root{
+    --bg1:#FFF1F3; --bg2:#FFF7ED; --accent:#FF3B69;
+    --modal-bg: rgba(255,255,255,0.96);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;font-family:system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;}
+  body{
+    display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(180deg,var(--bg1),var(--bg2));
+    padding:12px;
+    color:#222;
+  }
+
+  .wrap{
+    width:100%;max-width:420px;height:calc(100vh - 24px);border-radius:18px;overflow:hidden;
+    background:linear-gradient(180deg, rgba(255,255,255,0.95), rgba(255,255,255,0.85));
+    box-shadow:0 12px 36px rgba(20,20,30,0.08);display:flex;flex-direction:column;
+  }
+
+  header{
+    padding:10px 14px;border-bottom:1px solid rgba(0,0,0,0.04);display:flex;align-items:center;gap:8px;
+  }
+  .title{font-weight:800;font-size:16px}
+  .target{margin-left:auto;color:#666;font-weight:700}
+
+  .game-area{flex:1;display:flex;align-items:center;justify-content:center;padding:8px}
+  canvas{width:100%;height:100%;display:block;border-radius:12px;background:transparent}
+
+  .hud{display:flex;gap:8px;padding:10px;border-top:1px solid rgba(0,0,0,0.04);align-items:center}
+  .stat{flex:1;background:linear-gradient(90deg,#fff,#fff8);padding:8px;border-radius:999px;text-align:center;font-weight:800}
+  button{border:0;padding:8px 12px;border-radius:10px;font-weight:700;cursor:pointer}
+  .btn-primary{background:var(--accent);color:#fff}
+  .btn-ghost{background:transparent;border:1px solid rgba(0,0,0,0.06)}
+
+  .hint{font-size:12px;color:#666;text-align:center;padding:8px 12px}
+
+  /* modal */
+  .modal-backdrop{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.22);backdrop-filter: blur(6px);z-index:60}
+  .modal-card{background:var(--modal-bg);padding:18px;border-radius:14px;max-width:92%;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.15)}
+  .modal-card h3{margin:0 0 8px;color:var(--accent)}
+  .modal-card p{margin:0 0 12px;color:#333;line-height:1.4}
+  .modal-actions{display:flex;gap:10px;justify-content:center}
+
+  /* small screens tweak */
+  @media(min-width:900px){
+    .wrap{max-width:760px;height:640px}
+  }
+</style>
+</head>
+<body>
+  <div class="wrap" role="application" aria-label="Catch The Heart game">
+    <header>
+      <div class="title">Catch The Heart</div>
+      <div class="target">Target: <span id="targetLabel">20</span></div>
+    </header>
+
+    <div class="game-area">
+      <canvas id="gameCanvas" width="360" height="580" aria-label="Canvas game Catch The Heart"></canvas>
+    </div>
+
+    <div class="hud" aria-hidden="false">
+      <div class="stat">Score: <span id="score">0</span></div>
+      <button id="startBtn" class="btn-primary" aria-disabled="true">Loading...</button>
+      <button id="resetBtn" class="btn-ghost">Reset</button>
+    </div>
+
+    <div class="hint">Gunakan tombol Start, geser layar kiri/kanan, atau panah keyboard ← →</div>
+  </div>
+
+  <!-- Modal -->
+  <div id="modalBackdrop" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal-card" role="document">
+      <h3>Kamu berhasil menangkap semua hati!</h3>
+      <p id="modalText">“Kamu berhasil nangkep semua hati.<br> Sekarang tinggal satu hati yang belum — hati kamu.<br> Boleh nggak kalau aku coba ngedeketin pelan-pelan?”</p>
+      <div class="modal-actions">
+        <button id="modalOk" class="btn-primary">OK</button>
+        <button id="modalAgain" class="btn-ghost">Main Lagi</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* Final version:
+ - Font Awesome via CDN
+ - Wait for font load before enabling Start
+ - Heart drawn as Font Awesome solid icon (\uf004)
+ - Player drawn as circular avatar from face.png (replace file when ready)
+ - Mobile-friendly controls
+*/
+
+// CONFIG
+const CFG = {
+  target: 20,
+  canvasW: 360,
+  canvasH: 580,
+  spawnInterval: 800,
+  gravity: 0.12,
+  playerSize: 80, // diameter for avatar rendering (K2 ~ 70-90; adjust here)
+  heartFontSize: 48, // M ~ 42-50, choose 48
+  heartColor: '#FF3B69'
+};
+
+// DOM refs
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const startBtn = document.getElementById('startBtn');
+const resetBtn = document.getElementById('resetBtn');
+const modalBackdrop = document.getElementById('modalBackdrop');
+const modalOk = document.getElementById('modalOk');
+const modalAgain = document.getElementById('modalAgain');
+const targetLabel = document.getElementById('targetLabel');
+
+targetLabel.textContent = CFG.target;
+
+// setup hi-dpi
+function fitCanvas(){
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = CFG.canvasW * dpr;
+  canvas.height = CFG.canvasH * dpr;
+  canvas.style.width = Math.min(window.innerWidth - 24, CFG.canvasW) + 'px';
+  canvas.style.height = (parseFloat(canvas.style.width) * (CFG.canvasH/CFG.canvasW)) + 'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+fitCanvas();
+window.addEventListener('resize', fitCanvas);
+
+// GAME STATE
+let running = false;
+let lastTime = 0;
+let lastSpawn = 0;
+let hearts = [];
+let score = 0;
+let keys = {left:false,right:false};
+let faceImg = null;
+let fontReady = false;
+
+// PLAYER (center bottom)
+const player = {
+  x: CFG.canvasW / 2,
+  y: CFG.canvasH - 70,
+  r: Math.round(CFG.playerSize / 2)
+};
+
+// Load face image (placeholder: face.png). Ganti file ini saat kamu upload gambarmu.
+const face = new Image();
+face.src = 'face.png'; // <-- GANTI FILE DI SINI (nama file face.png)
+face.onload = () => { faceImg = face; };
+face.onerror = () => { faceImg = null; /* fallback will be drawn */ };
+
+// WebAudio beep (soft)
+let audioCtx = null;
+function beep(freq=780, duration=0.08, vol=0.06){
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.value = freq;
+    g.gain.value = vol;
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+    setTimeout(()=>o.stop(), duration*1000 + 20);
+  } catch(e){
+    // ignore audio errors (autoplay policies)
+  }
+}
+
+// SPAWN heart (as text icon)
+function spawnHeart(){
+  const size = CFG.heartFontSize;
+  const x = 12 + Math.random()*(CFG.canvasW - 24);
+  const y = -40;
+  const vy = 1 + Math.random()*1.6;
+  hearts.push({x,y,vy,size,rot: (Math.random()-0.5)*0.2});
+}
+
+// DRAW heart using Font Awesome glyph \uf004
+function drawHeartObj(h){
+  ctx.save();
+  ctx.translate(h.x, h.y);
+  ctx.rotate(h.rot);
+  // set font to FontAwesome (weight 900)
+  ctx.fillStyle = CFG.heartColor;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `900 ${h.size}px "Font Awesome 6 Free"`;
+  // Unicode for solid heart in FA: \uf004
+  ctx.fillText('\uf004', 0, 0);
+  ctx.restore();
+}
+
+// DRAW player as circular avatar
+function drawPlayer(){
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  // clip circle
+  ctx.beginPath();
+  ctx.arc(0, 0, player.r, 0, Math.PI*2);
+  ctx.closePath();
+  ctx.clip();
+  if (faceImg) {
+    // draw image centered (cover)
+    // draw at size 2*r
+    ctx.drawImage(faceImg, -player.r, -player.r, player.r*2, player.r*2);
+  } else {
+    // fallback: colored circle with initials
+    ctx.fillStyle = '#FFDDE6';
+    ctx.beginPath(); ctx.arc(0,0,player.r,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#7a2a3b';
+    ctx.font = `${Math.round(player.r*0.9)}px system-ui`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('L', 0, 0);
+  }
+  ctx.restore();
+}
+
+// collision approx using circle distance
+function checkCollision(h){
+  const dx = h.x - player.x;
+  const dy = h.y - player.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  // consider heart icon size roughly half of font size
+  const heartRadius = h.size * 0.45;
+  return dist < (player.r + heartRadius*0.6);
+}
+
+// update loop
+function update(dt){
+  if (!running) return;
+  // spawn
+  if (Date.now() - lastSpawn > CFG.spawnInterval){
+    spawnHeart();
+    lastSpawn = Date.now();
+  }
+  // controls
+  if (keys.left) player.x -= 6;
+  if (keys.right) player.x += 6;
+  // clamp
+  player.x = Math.max(player.r, Math.min(CFG.canvasW - player.r, player.x));
+  // hearts physics
+  for (let i=hearts.length-1;i>=0;i--){
+    const h = hearts[i];
+    h.vy += CFG.gravity * (0.9 + Math.random() * 0.4);
+    h.y += h.vy;
+    h.rot += 0.01 * (Math.random()-0.5);
+    if (!h.caught && checkCollision(h)){
+      h.caught = true;
+      hearts.splice(i,1);
+      score++;
+      scoreEl.textContent = score;
+      beep();
+      if (score >= CFG.target) {
+        // win
+        running = false;
+        showModal();
+      }
+    } else if (h.y > CFG.canvasH + 60) {
+      hearts.splice(i,1);
+    }
+  }
+}
+
+// render
+function render(){
+  // background soft
+  ctx.clearRect(0,0,CFG.canvasW,CFG.canvasH);
+  const g = ctx.createLinearGradient(0,0,0,CFG.canvasH);
+  g.addColorStop(0,'rgba(255,235,238,0.45)');
+  g.addColorStop(1,'rgba(255,250,240,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,CFG.canvasW,CFG.canvasH);
+
+  // hearts behind
+  for (const h of hearts) drawHeartObj(h);
+
+  // player
+  drawPlayer();
+
+  // small guide
+  ctx.font = "12px system-ui, Arial";
+  ctx.fillStyle = "#444";
+  ctx.fillText("Tangkap hati untuk pesan spesial ♥", 12, 18);
+}
+
+// main loop
+let rafId;
+function loop(ts){
+  if (!lastTime) lastTime = ts;
+  const dt = ts - lastTime;
+  lastTime = ts;
+  update(dt);
+  render();
+  rafId = requestAnimationFrame(loop);
+}
+
+// show modal
+function showModal(){
+  modalBackdrop.style.display = 'flex';
+}
+
+// reset / start functions
+function resetGame(){
+  running = false;
+  hearts = [];
+  score = 0;
+  scoreEl.textContent = 0;
+  lastSpawn = 0;
+  modalBackdrop.style.display = 'none';
+  player.x = CFG.canvasW / 2;
+  render();
+}
+function startGame(){
+  if (!fontReady) return;
+  if (running) return;
+  running = true;
+  score = 0;
+  scoreEl.textContent = 0;
+  hearts = [];
+  lastSpawn = Date.now() - 300;
+  lastTime = 0;
+  modalBackdrop.style.display = 'none';
+  requestAnimationFrame(loop);
+}
+
+// keyboard
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+  if ((e.key === ' ' || e.key === 'Spacebar') && !running) startGame();
+});
+window.addEventListener('keyup', (e) => {
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+});
+
+// touch controls (tap left/right & drag)
+let activeTouch = null;
+canvas.addEventListener('touchstart', (ev) => {
+  ev.preventDefault();
+  const t = ev.changedTouches[0];
+  activeTouch = t.identifier;
+  const rect = canvas.getBoundingClientRect();
+  const cx = t.clientX - rect.left;
+  if (!running) startGame();
+  if (cx < rect.width/2) { keys.left = true; keys.right = false; } else { keys.right = true; keys.left = false; }
+});
+canvas.addEventListener('touchmove', (ev) => {
+  ev.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const t = [...ev.changedTouches].find(tt => tt.identifier === activeTouch) || ev.changedTouches[0];
+  if (!t) return;
+  const cx = t.clientX - rect.left;
+  if (cx < rect.width/2) { keys.left = true; keys.right = false; } else { keys.right = true; keys.left = false; }
+});
+canvas.addEventListener('touchend', (ev) => {
+  ev.preventDefault();
+  keys.left = keys.right = false;
+  activeTouch = null;
+});
+
+// mouse drag for desktop
+let dragging = false;
+canvas.addEventListener('mousedown', (e) => {
+  dragging = true;
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  player.x = x * (CFG.canvasW / rect.width);
+});
+window.addEventListener('mousemove', (e) => {
+  if (!dragging) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  player.x = x * (CFG.canvasW / rect.width);
+});
+window.addEventListener('mouseup', () => { dragging = false; });
+
+// Buttons
+startBtn.addEventListener('click', () => startGame());
+resetBtn.addEventListener('click', () => resetGame());
+modalOk.addEventListener('click', () => { modalBackdrop.style.display = 'none'; resetGame(); });
+modalAgain.addEventListener('click', () => { modalBackdrop.style.display = 'none'; startGame(); });
+
+// Wait for Font Awesome to load before enabling Start
+function enableStart(){
+  startBtn.disabled = false;
+  startBtn.textContent = 'Start';
+  startBtn.setAttribute('aria-disabled','false');
+  fontReady = true;
+}
+
+// try using FontFaceSet API to detect load
+if (document.fonts && document.fonts.load) {
+  // request the specific weight/size used. we use 900 weight.
+  document.fonts.load(`900 ${CFG.heartFontSize}px "Font Awesome 6 Free"`).then(() => {
+    enableStart();
+  }).catch(()=> {
+    // fallback: allow after short delay
+    setTimeout(enableStart, 300);
+  });
+} else {
+  // older browsers fallback
+  setTimeout(enableStart, 400);
+}
+
+// adapt canvas size to display box
+function adaptCanvas(){
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  // adjust player size proportionally to display width
+  player.r = Math.round((CFG.playerSize/2) * (rect.width / CFG.canvasW));
+}
+window.addEventListener('resize', () => { fitCanvas(); adaptCanvas(); render(); });
+adaptCanvas();
+
+// initial render (so user sees something)
+render();
+
+</script>
+</body>
+</html>
